@@ -15,7 +15,11 @@ const SAFE_KEYS = new Set(["path", "route"]);
 
 function redact(value: unknown, depth = 0): unknown {
   if (depth > 4 || value === null || typeof value !== "object") return value;
-  if (value instanceof Error) return { name: value.name, message: value.message };
+  if (value instanceof Error) {
+    // Drizzle wraps driver errors as "Failed query: ..." with the real reason in `cause`.
+    const cause = value.cause instanceof Error ? value.cause.message : undefined;
+    return { name: value.name, message: value.message, ...(cause ? { cause } : {}) };
+  }
   if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
   const out: Fields = {};
   for (const [k, v] of Object.entries(value)) {
