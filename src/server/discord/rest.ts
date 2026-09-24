@@ -37,7 +37,13 @@ export async function createChannelMessage(channelId: string, body: object, nonc
       headers: botHeaders(),
       body: JSON.stringify({ ...body, nonce, enforce_nonce: true }),
     },
-    { permanentCodes: { 403: "missing_channel_access", 404: "channel_not_found" } },
+    {
+      permanentCodes: {
+        401: "bot_token_invalid",
+        403: "missing_channel_access",
+        404: "channel_not_found",
+      },
+    },
   );
   return (await res.json()) as { id: string; channel_id: string };
 }
@@ -55,7 +61,13 @@ export async function listGuildChannels(guildId: string): Promise<GuildChannel[]
     "discord",
     `${DISCORD_API}/guilds/${guildId}/channels`,
     { headers: botHeaders() },
-    { permanentCodes: { 403: "bot_not_in_guild", 404: "bot_not_in_guild" } },
+    {
+      permanentCodes: {
+        401: "bot_token_invalid",
+        403: "bot_not_in_guild",
+        404: "bot_not_in_guild",
+      },
+    },
   );
   return (await res.json()) as GuildChannel[];
 }

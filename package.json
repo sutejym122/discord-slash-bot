@@ -14,7 +14,9 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
-    "check": "biome check && tsc --noEmit && vitest run"
+    "check": "biome check && tsc --noEmit && vitest run",
+    "admin:create": "tsx --conditions=react-server scripts/create-admin.ts",
+    "simulate": "tsx scripts/simulate.ts"
   },
   "dependencies": {
     "better-auth": "^1.7.5",

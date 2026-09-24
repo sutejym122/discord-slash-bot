@@ -5,8 +5,15 @@ import { env } from "../env";
 import { send } from "../http";
 import { permanent, retryable } from "../jobs/errors";
 
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
 export const triageSchema = z.object({
-  summary: z.string().trim().min(1).max(300),
+  // Over-long text is trimmed rather than rejected; a retry would likely be just as wordy.
+  summary: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((s) => clip(s, 300)),
   category: z.enum(CATEGORIES),
   severity: z.enum(SEVERITIES),
   // Tags are cosmetic, so odd ones are dropped rather than failing the whole triage.
@@ -16,7 +23,11 @@ export const triageSchema = z.object({
       .filter((t) => /^[a-z0-9][a-z0-9 -]{0,24}$/.test(t))
       .slice(0, 5),
   ),
-  next_step: z.string().trim().min(1).max(200),
+  next_step: z
+    .string()
+    .trim()
+    .min(1)
+    .transform((s) => clip(s, 200)),
 });
 
 export type Triage = z.infer<typeof triageSchema>;
