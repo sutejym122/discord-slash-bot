@@ -8,7 +8,7 @@ About ten minutes for the happy path, and a few more if you want to break things
 |---|---|
 | Dashboard | URL_PENDING_DEPLOY |
 | Admin login | REVIEWER_EMAIL_PENDING / REVIEWER_PASSWORD_PENDING (a throwaway account) |
-| Test server | INVITE_PENDING |
+| Test server | https://discord.gg/Ut67uGXmk |
 
 The test server has `#general` (run commands here), `#alerts` (where reports are posted) and
 `#mirror` (the second channel, fed by a Discord webhook).

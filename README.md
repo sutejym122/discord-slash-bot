@@ -245,6 +245,9 @@ Links. If you set a ping role, that role must allow mentions.
 Everything used is on a free tier with no card: Vercel Hobby, Supabase Free, Groq free tier,
 and the Discord Developer Portal.
 
+Sign in on the domain in `APP_URL`. Better Auth rejects requests from other origins, so a
+per-deployment preview URL won't let you log in.
+
 `GET /api/health` reports database reachability and how many jobs are due.
 
 ## Tests
