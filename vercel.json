@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm vercel-build",
+  "regions": ["iad1"],
+  "crons": [{ "path": "/api/jobs/sweep", "schedule": "0 6 * * *" }]
+}
