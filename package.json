@@ -17,7 +17,7 @@
     "check": "biome check && tsc --noEmit && vitest run",
     "admin:create": "tsx --conditions=react-server scripts/create-admin.ts",
     "simulate": "tsx scripts/simulate.ts",
-    "vercel-build": "tsx scripts/migrate.ts && tsx --conditions=react-server scripts/register-commands.ts && next build",
+    "vercel-build": "tsx scripts/migrate.ts && tsx --conditions=react-server scripts/register-commands.ts && tsx --conditions=react-server scripts/create-admin.ts --from-env && next build",
     "discord:register": "tsx --conditions=react-server scripts/register-commands.ts"
   },
   "dependencies": {

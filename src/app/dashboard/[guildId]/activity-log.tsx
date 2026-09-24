@@ -112,7 +112,7 @@ function JobDetail({ guildId, job }: { guildId: string; job: Job }) {
           {job.history.map((a) => (
             <li
               key={a.attempt}
-              className="grid grid-cols-[4.5rem_1fr_auto] items-baseline gap-3 text-xs"
+              className="grid grid-cols-[2rem_1fr] items-baseline gap-x-3 gap-y-0.5 text-xs sm:grid-cols-[4.5rem_1fr_auto]"
             >
               <span className="tabular text-ink-3">#{a.attempt}</span>
               <span
@@ -122,7 +122,7 @@ function JobDetail({ guildId, job }: { guildId: string; job: Job }) {
                   ? "Delivered"
                   : `${a.outcome === "retryable_error" ? "Failed, will retry" : "Failed permanently"}${a.httpStatus ? ` (HTTP ${a.httpStatus})` : ""}`}
               </span>
-              <span className="tabular text-ink-3">
+              <span className="col-start-2 tabular text-ink-3 sm:col-start-auto">
                 {a.durationMs} ms · <RelativeTime value={a.startedAt} />
               </span>
             </li>
