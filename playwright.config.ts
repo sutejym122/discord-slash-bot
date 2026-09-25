@@ -42,7 +42,7 @@ export default defineConfig({
   webServer: {
     command: `pnpm exec next dev -p ${PORT}`,
     // Playwright starts the server before globalSetup migrates, so wait on a static file.
-    url: `${e2eEnv.APP_URL}/favicon.ico`,
+    url: `${e2eEnv.APP_URL}/icon.svg`,
     env: e2eEnv,
     reuseExistingServer: false,
     timeout: 120_000,
