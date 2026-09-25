@@ -12,8 +12,9 @@ files.
   step myself, and ran the live end-to-end checks against Discord.
 - **What Claude did.** Most of the code and tests, the first drafts of the docs, and the
   research into free-tier limits.
-- **How I worked with it.** I pushed back on or reshaped proposals where noted below. Nothing
-  counted as done until a test or a live run showed it working.
+- **How I worked with it.** I stated constraints up front instead of reviewing whatever came
+  back, and checked each claim against a test or a live run before counting it as done. The
+  final checks against real Discord, Supabase and Vercel were mine.
 
 ## Decisions I made
 
@@ -22,8 +23,9 @@ Discord can deliver the same interaction more than once. I didn't want a check-t
 that two simultaneous requests could both pass. The interaction id is the primary key of
 `interactions`, and it's the first insert of the transaction that also writes the report, the
 jobs and the exact response. A concurrent duplicate blocks on that key, then replays the
-stored response. I asked for a test that fires 8 identical deliveries at once. It asserts one
-report, one set of jobs and identical responses.
+stored response. I asked for concurrent duplicates to be tested, not just sequential ones. The
+test fires 8 identical deliveries at once and asserts one report, one set of jobs and identical
+responses.
 
 **2. A database outbox instead of "call Slack after responding".**
 The obvious version does the slow work in a background promise after replying to Discord. If
@@ -66,15 +68,30 @@ problem.
   200 ms timeout. The job-level test has the fake `fetch` throw the same `TimeoutError` the
   platform would.
 - **The lesson.** A background loop that outlives its test turns a shared database into
-  cross-test interference, and the symptom shows up somewhere else. It's also a reminder that
-  the runner really does grab any due job. That's what I want in production, and exactly why
-  tests need to clean up after themselves.
+  cross-test interference, and the symptom shows up somewhere else.
+
+## What production caught
+
+The first `pg_cron` job pointed at the app's root URL instead of `/api/jobs/sweep`.
+Every call came back `200` with the landing page's HTML, so the scheduler looked healthy.
+Meanwhile retries only happened when something else triggered a drain. I found it during
+live verification by looking at the response bodies in `net._http_response`, then
+rescheduled the job at the right endpoint and watched a simulated mirror outage recover.
+
+A status code wasn't enough to prove the sweep was running, so I made the app itself notice:
+
+- Every sweep now records a heartbeat.
+- `/api/health` reports `degraded` after three missed minutes, and the dashboard shows
+  "Retry sweep last ran ..." next to the delivery status.
+- `supabase/cron.sql` now takes the full sweep URL as a Vault secret, and it says what a
+  healthy response looks like.
 
 ## With more time
 
 - **Streamed activity updates.** The dashboard polls every 4 seconds. Server-sent events would
   work, but serverless functions make them awkward.
-- **Dashboard roles.** Invite another admin to a server without them reinstalling the bot.
+- **Email invites.** Owners can share a server with an existing account, but accounts are
+  still created by the operator. An invite link would remove that step.
 - **Better mirror dedupe.** Only an idempotency key on the Slack/Discord side would fully close
   the at-least-once window for mirrors. Short of that, I'd record a per-job delivery marker in
   the message text so a duplicate is at least recognisable.

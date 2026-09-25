@@ -38,7 +38,10 @@ Vitest against a real Postgres, Playwright for browser flows. pnpm.
   retryable (network, 5xx, 429) or permanent (4xx config problems, expired token); only retryable ones
   back off and retry. Terminal failures stay visible in the dashboard with a reason.
 - **Guild isolation.** Every dashboard query and mutation goes through `requireGuildAdmin(userId,
-  guildId)`. Never accept a guild id from the client without that check.
+  guildId)`, or `requireGuildOwner` for sharing access and disconnecting. Never accept a guild id
+  from the client without that check.
+- **Scheduler health.** The minute sweep writes a heartbeat. If you add periodic work, record a
+  heartbeat for it too; a 200 from the wrong URL once hid a broken cron job.
 - **Secrets.** Bot token, client secret, webhook URLs, interaction tokens and API keys never reach
   the client, logs, error responses or the repo. Webhook URLs are encrypted at rest and only a masked
   hint is returned. Webhook hosts are allowlisted (Slack, Discord) to prevent SSRF.

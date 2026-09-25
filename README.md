@@ -13,7 +13,7 @@ A Discord bot for problem reports and server status, plus a dashboard for the ad
 The bot runs entirely on Discord's HTTP interactions: no gateway connection, nothing to keep
 awake.
 
-**Live:** URL_PENDING_DEPLOY
+**Live:** https://discord-slash-bot-six.vercel.app
 **Reviewer guide:** [REVIEWING.md](REVIEWING.md)
 
 ## How it works
@@ -111,7 +111,11 @@ duplicated in that window. I accepted that rather than risk dropping one.
 - **Proving ownership.** A server gets connected through Discord's bot-install OAuth flow.
   The guild id comes from Discord's token exchange, not the query string, and there's a
   `state` cookie against CSRF. Discord only allows adding a bot to a server where you have
-  Manage Server, and that's what makes you an admin of it here.
+  Manage Server, and that's what makes you the server's **owner** here.
+- **Sharing access.** An owner can add other existing accounts as **admins** of that one
+  server (Settings → Dashboard access). Admins can view activity and change rules and
+  settings. Only owners can add or remove people or disconnect the server. Both checks run
+  server-side on every action.
 - **Secrets.** The bot token, client secret, Groq key and cron secret live only in server
   env, validated by zod in `src/server/env.ts`.
   - Mirror webhook URLs are bearer credentials: they're **AES-256-GCM encrypted at rest**,
@@ -125,8 +129,8 @@ duplicated in that window. I accepted that rather than risk dropping one.
 
 ### Data model
 
-`guilds` · `guild_admins` · `command_rules` · `interactions` · `reports` · `jobs` ·
-`job_attempts`, plus Better Auth's `users`, `sessions`, `accounts`, `verifications` and
+`guilds` · `guild_admins` (with an `owner`/`admin` role) · `command_rules` · `interactions` ·
+`reports` · `jobs` · `job_attempts` · `heartbeats`, plus Better Auth's `users`, `sessions`, `accounts`, `verifications` and
 `rate_limits`. The schema is in `src/server/db/schema.ts` and the migrations in `drizzle/`.
 
 ## Stack
@@ -239,8 +243,10 @@ Links. If you set a ping role, that role must allow mentions.
 3. Deploy. `pnpm vercel-build` runs the migrations, registers commands, creates the
    `ADMIN_EMAIL` account if it's set, then runs `next build`.
 4. Set the Interactions Endpoint URL and the OAuth2 redirect in the Developer Portal.
-5. Run `supabase/cron.sql` in the Supabase SQL editor, with the cron secret and domain filled
-   in.
+5. Run `supabase/cron.sql` in the Supabase SQL editor, with the full sweep URL and the cron
+   secret filled in. Both go into Supabase Vault. A healthy sweep answers with JSON. If
+   `net._http_response` shows HTML, the job is pointing at a page rather than
+   `/api/jobs/sweep`.
 
 Everything used is on a free tier with no card: Vercel Hobby, Supabase Free, Groq free tier,
 and the Discord Developer Portal.
@@ -248,7 +254,9 @@ and the Discord Developer Portal.
 Sign in on the domain in `APP_URL`. Better Auth rejects requests from other origins, so a
 per-deployment preview URL won't let you log in.
 
-`GET /api/health` reports database reachability and how many jobs are due.
+`GET /api/health` reports database reachability, how many jobs are due, and when the minute
+sweep last ran. It says `"status": "degraded"` if the sweep has missed three minutes in a row,
+and the dashboard shows the same warning next to the delivery status.
 
 ## Tests
 
@@ -271,8 +279,9 @@ The integration tests use a real Postgres and stub only `fetch`. They cover:
 - **Discord failures:** expired interaction tokens and lost channel access.
 - **Concurrency:** concurrent workers, crash recovery and lease fencing.
 - **Timing:** slow AI not delaying the response.
-- **Access:** auth, guild isolation, SSRF-safe webhook validation, and secrets never
-  appearing in API responses or logs.
+- **Access:** auth, guild isolation, owner-only actions for shared admins, SSRF-safe webhook
+  validation, and secrets never appearing in API responses or logs.
+- **Health:** the sweep heartbeat and the health endpoint.
 
 CI runs all of it on every push (`.github/workflows/ci.yml`).
 
@@ -296,6 +305,6 @@ tests/                    unit, integration, e2e
 - **Mirror delivery is at-least-once.** See [Jobs](#jobs) above.
 - **The live log polls every 4 seconds** rather than streaming. Server-sent events on
   serverless functions aren't worth it at this size.
-- **Admins are per server, not per role.** Anyone who installs the bot into a server becomes
-  its admin here. There's no invite flow for adding a second dashboard admin to an existing
-  server, other than them installing the bot again.
+- **Accounts are created by the operator.** There's no public sign-up or email invites: an
+  account is made with `pnpm admin:create` (or `ADMIN_EMAIL` at build time), and an owner
+  then shares a server with it by email.

@@ -316,7 +316,7 @@ export function AccessList({
             label="Add someone"
             htmlFor="share-email"
             error={share.result && !share.result.ok ? share.result.error : undefined}
-            hint="They need an existing account. They'll see this server next time they sign in."
+            hint="They need an existing account. The server shows up in their list straight away."
           >
             <div className="flex gap-2">
               <input

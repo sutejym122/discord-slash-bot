@@ -6,12 +6,14 @@ About ten minutes for the happy path, and a few more if you want to break things
 
 | | |
 |---|---|
-| Dashboard | URL_PENDING_DEPLOY |
-| Admin login | REVIEWER_EMAIL_PENDING / REVIEWER_PASSWORD_PENDING (a throwaway account) |
+| Dashboard | https://discord-slash-bot-six.vercel.app |
+| Admin login | A throwaway account, sent with the submission email (kept out of this public repo) |
 | Test server | https://discord.gg/Ut67uGXmk |
 
 The test server has `#general` (run commands here), `#alerts` (where reports are posted) and
-`#mirror` (the second channel, fed by a Discord webhook).
+`#mirror` (the second channel, fed by a Discord webhook). The reviewer account has been added
+as an **admin** of that server, so it can see everything and change rules and settings.
+Only the owner can share access or disconnect the bot.
 
 ## 1. Report something
 
@@ -40,7 +42,7 @@ health. **Refresh** updates it in place.
 
 ## 4. Look at the dashboard
 
-Sign in and open **Test server**.
+Sign in and open **Slash Bot Test**.
 
 - **Activity** is the live log, refreshing every few seconds. Click a row to see the report,
   the AI output and every job with its attempt history. **Needs attention** filters to
@@ -62,13 +64,17 @@ Sign in and open **Test server**.
 2. File a `/report` with high severity.
 3. In Activity, the Mirror step shows *retrying* with its attempt count and next retry time.
    The report, reply and alert post are unaffected.
-4. Click **End outage now**, or wait. Within about a minute the minute sweep retries and the
-   step turns into "Recovered after N attempts", with each attempt listed.
+4. Click **End outage now**, or wait for it to expire. The next retry follows the backoff
+   schedule (the row shows when it's due), and the minute sweep picks it up. The step then
+   turns into "Recovered after N attempts", with each attempt listed.
+
+A job that runs out of attempts stays as *failed* under **Needs attention**, with its last
+error and a **Retry** button.
 
 **Forged, unsigned and replayed requests:**
 
 ```bash
-URL=URL_PENDING_DEPLOY/api/discord/interactions
+URL=https://discord-slash-bot-six.vercel.app/api/discord/interactions
 
 # No signature -> 401 {"error":"missing_signature"}
 curl -i -X POST $URL -H 'content-type: application/json' -d '{"type":1}'
@@ -78,7 +84,7 @@ curl -i -X POST $URL -H 'content-type: application/json' \
   -H "x-signature-ed25519: $(printf 'ab%.0s' {1..64})" \
   -H "x-signature-timestamp: $(date +%s)" -d '{"type":1}'
 
-# Garbage -> 401 (the signature is checked before the body is even parsed)
+# Garbage -> 401 {"error":"missing_signature"} (checked before the body is parsed)
 curl -i -X POST $URL -d 'not json'
 ```
 
@@ -86,11 +92,13 @@ A replayed genuine request would be rejected as `stale_timestamp` after 5 minute
 that window it would hit the interaction-id primary key and just get the original response
 back. The integration tests exercise both, including 8 concurrent copies of one interaction.
 
-**Isolation.** The reviewer account only sees its own servers. Any other server id in the
-URL gives the same 404 as one that doesn't exist.
+**Isolation.** The reviewer account only sees servers it has been given. Any other server id
+in the URL gives the same 404 as one that doesn't exist, and the activity API
+(`/api/guilds/<id>/activity`) answers 401 without a session and 404 for someone else's
+server.
 
-**Health:** `GET URL_PENDING_DEPLOY/api/health` returns database status and how many jobs
-are due.
+**Health.** `GET https://discord-slash-bot-six.vercel.app/api/health` returns database status,
+how many jobs are due, and when the minute sweep last ran.
 
 ## Adding the bot to your own server
 
