@@ -8,7 +8,12 @@ import { useAction } from "@/components/use-action";
 import type { ActivityFilter, ActivityItem } from "@/server/guilds/activity";
 import { retryJobAction } from "./actions";
 
-type Health = { retrying: number; running: number; failed: number };
+type Health = {
+  retrying: number;
+  running: number;
+  failed: number;
+  sweep: { lastRunAt: string | null; stale: boolean };
+};
 type Page = { items: ActivityItem[]; hasMore: boolean; health: Health };
 type Job = ActivityItem["jobs"][number];
 
@@ -243,23 +248,46 @@ function Row({ guildId, item }: { guildId: string; item: ActivityItem }) {
 }
 
 function HealthLine({ health }: { health: Health }) {
-  if (!health.retrying && !health.failed) {
+  const pills = [];
+  if (health.sweep.stale) {
+    pills.push(
+      <Pill
+        key="sweep"
+        tone="warn"
+        title="Retries rely on the minute sweep. Check the Supabase cron job."
+      >
+        {health.sweep.lastRunAt ? (
+          <>
+            Retry sweep last ran <RelativeTime value={health.sweep.lastRunAt} />
+          </>
+        ) : (
+          "Retry sweep has never run"
+        )}
+      </Pill>,
+    );
+  }
+  if (health.retrying > 0) {
+    pills.push(
+      <Pill key="retrying" tone="warn" pulse>
+        {health.retrying} retrying
+      </Pill>,
+    );
+  }
+  if (health.failed > 0) {
+    pills.push(
+      <Pill key="failed" tone="bad">
+        {health.failed} failed in 24h
+      </Pill>,
+    );
+  }
+  if (pills.length === 0) {
     return (
       <Pill tone="ok" pulse={health.running > 0}>
         {health.running ? "Delivering" : "All deliveries caught up"}
       </Pill>
     );
   }
-  return (
-    <span className="flex gap-2">
-      {health.retrying > 0 && (
-        <Pill tone="warn" pulse>
-          {health.retrying} retrying
-        </Pill>
-      )}
-      {health.failed > 0 && <Pill tone="bad">{health.failed} failed in 24h</Pill>}
-    </span>
-  );
+  return <span className="flex flex-wrap gap-2">{pills}</span>;
 }
 
 const FILTERS: { value: ActivityFilter; label: string }[] = [

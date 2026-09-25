@@ -8,6 +8,20 @@
       "when": 1790233407510,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790319821030,
+      "tag": "0001_admin_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790319822036,
+      "tag": "0002_sweep_heartbeat",
+      "breakpoints": true
     }
   ]
 }

@@ -4,17 +4,24 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import type { CommandName } from "@/server/discord/commands";
 import { leaveGuild } from "@/server/discord/rest";
-import { GuildAccessError, requireGuildAdmin } from "@/server/guilds/access";
+import {
+  GuildAccessError,
+  OwnerRequiredError,
+  requireGuildAdmin,
+  requireGuildOwner,
+} from "@/server/guilds/access";
 import {
   type ActionResult,
   clearMirror,
   disconnectGuild,
   retryJob,
+  revokeAccess,
   saveRule,
   sendTestMirror,
   setAlertChannel,
   setMirror,
   setMirrorOutage,
+  shareAccess,
 } from "@/server/guilds/settings";
 import { JobError } from "@/server/jobs/errors";
 import { drainJobs } from "@/server/jobs/runner";
@@ -23,21 +30,26 @@ import { requireUser } from "@/server/session";
 
 // Every action re-checks the session and guild access itself. Server actions are public POST
 // endpoints, so the page having done the check is not enough.
-async function asAdmin(guildId: string) {
+async function asAdmin(guildId: string, ownerOnly: boolean) {
   const user = await requireUser();
-  return { user, guild: await requireGuildAdmin(user.id, guildId) };
+  const guild = ownerOnly
+    ? await requireGuildOwner(user.id, guildId)
+    : await requireGuildAdmin(user.id, guildId);
+  return { user, guild };
 }
 
 async function run(
   guildId: string,
   fn: (ctx: Awaited<ReturnType<typeof asAdmin>>) => Promise<ActionResult>,
+  opts: { ownerOnly?: boolean } = {},
 ): Promise<ActionResult> {
   try {
-    const result = await fn(await asAdmin(guildId));
+    const result = await fn(await asAdmin(guildId, opts.ownerOnly ?? false));
     if (result.ok) revalidatePath(`/dashboard/${guildId}`, "layout");
     return result;
   } catch (error) {
     if (error instanceof GuildAccessError) return { ok: false, error: "Server not found." };
+    if (error instanceof OwnerRequiredError) return { ok: false, error: error.message };
     if (error instanceof JobError) return { ok: false, error: `Discord: ${error.message}` };
     // redirect() from requireUser throws a special error that must propagate.
     if (error instanceof Error && "digest" in error) throw error;
@@ -93,10 +105,24 @@ export async function retryJobAction(guildId: string, jobId: string) {
 }
 
 export async function disconnectAction(guildId: string) {
-  return run(guildId, async () => {
-    const result = await disconnectGuild(guildId);
-    // Best effort: the server is disconnected here either way.
-    await leaveGuild(guildId).catch((error) => log.warn("guild.leave_failed", { guildId, error }));
-    return result;
-  });
+  return run(
+    guildId,
+    async () => {
+      const result = await disconnectGuild(guildId);
+      // Best effort: the server is disconnected here either way.
+      await leaveGuild(guildId).catch((error) =>
+        log.warn("guild.leave_failed", { guildId, error }),
+      );
+      return result;
+    },
+    { ownerOnly: true },
+  );
+}
+
+export async function shareAccessAction(guildId: string, email: string) {
+  return run(guildId, () => shareAccess(guildId, email), { ownerOnly: true });
+}
+
+export async function revokeAccessAction(guildId: string, userId: string) {
+  return run(guildId, () => revokeAccess(guildId, userId), { ownerOnly: true });
 }

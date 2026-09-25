@@ -5,7 +5,7 @@ import { snowflake } from "./discord";
 
 export async function resetDb() {
   await db().execute(sql`
-    truncate table job_attempts, jobs, reports, interactions, command_rules, guild_admins,
+    truncate table heartbeats, job_attempts, jobs, reports, interactions, command_rules, guild_admins,
       guilds, sessions, accounts, verifications, rate_limits, users restart identity cascade
   `);
 }
@@ -36,6 +36,10 @@ export async function createUser(email: string) {
   return user;
 }
 
-export async function makeAdmin(guildId: string, userId: string) {
-  await db().insert(guildAdmins).values({ guildId, userId });
+export async function makeAdmin(
+  guildId: string,
+  userId: string,
+  role: "owner" | "admin" = "owner",
+) {
+  await db().insert(guildAdmins).values({ guildId, userId, role });
 }

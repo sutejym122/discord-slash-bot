@@ -9,8 +9,10 @@ import { useAction } from "@/components/use-action";
 import {
   disconnectAction,
   removeMirrorAction,
+  revokeAccessAction,
   saveAlertChannelAction,
   saveMirrorAction,
+  shareAccessAction,
   simulateOutageAction,
   testMirrorAction,
 } from "../actions";
@@ -250,6 +252,90 @@ export function DisconnectButton({ guildId, guildName }: { guildId: string; guil
         </Button>
       </div>
       <Feedback result={action.result} />
+    </div>
+  );
+}
+
+type Admin = { userId: string; email: string; role: "owner" | "admin"; addedAt: string };
+
+export function AccessList({
+  guildId,
+  currentUserId,
+  canManage,
+  admins,
+}: {
+  guildId: string;
+  currentUserId: string;
+  canManage: boolean;
+  admins: Admin[];
+}) {
+  const [email, setEmail] = useState("");
+  const share = useAction(shareAccessAction);
+  const revoke = useAction(revokeAccessAction);
+
+  return (
+    <div className="grid max-w-md gap-5">
+      <ul className="grid gap-px overflow-hidden rounded-lg border border-line bg-line">
+        {admins.map((a) => (
+          <li
+            key={a.userId}
+            className="flex items-center justify-between gap-3 bg-surface px-4 py-3"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm">
+                {a.email}
+                {a.userId === currentUserId && <span className="text-ink-3"> (you)</span>}
+              </p>
+              <p className="mt-0.5 text-xs text-ink-3">
+                {a.role === "owner" ? "Owner" : "Admin"} · added <RelativeTime value={a.addedAt} />
+              </p>
+            </div>
+            {canManage && a.role === "admin" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={revoke.pending}
+                onClick={() => revoke.run(guildId, a.userId)}
+              >
+                Remove
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {canManage && (
+        <form
+          className="grid gap-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const r = await share.run(guildId, email);
+            if (r.ok) setEmail("");
+          }}
+        >
+          <Field
+            label="Add someone"
+            htmlFor="share-email"
+            error={share.result && !share.result.ok ? share.result.error : undefined}
+            hint="They need an existing account. They'll see this server next time they sign in."
+          >
+            <div className="flex gap-2">
+              <input
+                id="share-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                className={inputClass}
+              />
+              <Button type="submit" disabled={!email.trim() || share.pending}>
+                {share.pending && <Spinner />}
+                Add
+              </Button>
+            </div>
+          </Field>
+        </form>
+      )}
+      <Feedback result={share.result?.ok ? share.result : revoke.result} />
     </div>
   );
 }

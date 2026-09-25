@@ -57,7 +57,14 @@ export async function completeInstall(userId: string, code: string) {
         target: guilds.id,
         set: { name, icon, disconnectedAt: null, updatedAt: sql`now()` },
       });
-    await tx.insert(guildAdmins).values({ guildId: id, userId }).onConflictDoNothing();
+    // Installing proves Manage Server in Discord, so the installer becomes (or stays) owner.
+    await tx
+      .insert(guildAdmins)
+      .values({ guildId: id, userId, role: "owner" })
+      .onConflictDoUpdate({
+        target: [guildAdmins.guildId, guildAdmins.userId],
+        set: { role: "owner" },
+      });
   });
   return id;
 }

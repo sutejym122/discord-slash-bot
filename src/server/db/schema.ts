@@ -113,6 +113,10 @@ export const guilds = pgTable("guilds", {
   disconnectedAt: ts("disconnected_at"),
 });
 
+// The owner is whoever installed the bot through the dashboard. Owners can share access and
+// disconnect the server; admins they add can do everything else.
+export const adminRole = pgEnum("admin_role", ["owner", "admin"]);
+
 export const guildAdmins = pgTable(
   "guild_admins",
   {
@@ -122,6 +126,7 @@ export const guildAdmins = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    role: adminRole("role").notNull().default("admin"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -292,7 +297,16 @@ export const jobAttempts = pgTable(
   (t) => [uniqueIndex("job_attempts_job_attempt_idx").on(t.jobId, t.attempt)],
 );
 
+// Last run of periodic work (the minute sweep), so a scheduler that silently stopped calling
+// us shows up in /api/health and the dashboard instead of going unnoticed.
+export const heartbeats = pgTable("heartbeats", {
+  name: text("name").primaryKey(),
+  lastRunAt: ts("last_run_at").notNull(),
+  detail: jsonb("detail").notNull().default({}),
+});
+
 export type Guild = typeof guilds.$inferSelect;
+export type AdminRole = (typeof adminRole.enumValues)[number];
 export type Interaction = typeof interactions.$inferSelect;
 export type Report = typeof reports.$inferSelect;
 export type Job = typeof jobs.$inferSelect;

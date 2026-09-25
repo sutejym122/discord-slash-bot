@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { Notice, Pill, Section } from "@/components/ui";
 import { env } from "@/server/env";
-import { postableChannels } from "@/server/guilds/settings";
+import { listGuildAdmins, postableChannels } from "@/server/guilds/settings";
 import { JobError } from "@/server/jobs/errors";
 import { loadGuild } from "../guild";
-import { ChannelPicker, DisconnectButton, MirrorForm, OutageTool } from "./forms";
+import { AccessList, ChannelPicker, DisconnectButton, MirrorForm, OutageTool } from "./forms";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -23,8 +23,12 @@ export default async function SettingsPage({
 }: PageProps<"/dashboard/[guildId]/settings">) {
   const { guildId } = await params;
   const { connected } = await searchParams;
-  const { guild } = await loadGuild(guildId);
-  const { channels, error } = await loadChannels(guild.id);
+  const { guild, role, user } = await loadGuild(guildId);
+  const [{ channels, error }, admins] = await Promise.all([
+    loadChannels(guild.id),
+    listGuildAdmins(guild.id),
+  ]);
+  const isOwner = role === "owner";
   const aiConfigured = Boolean(env().GROQ_API_KEY);
 
   return (
@@ -90,8 +94,24 @@ export default async function SettingsPage({
         />
       </Section>
 
+      <Section
+        title="Dashboard access"
+        description="People who can see this server's activity and change its settings. Only the owner, who connected the server, can add or remove people."
+      >
+        <AccessList
+          guildId={guild.id}
+          currentUserId={user.id}
+          canManage={isOwner}
+          admins={admins.map((a) => ({ ...a, addedAt: a.addedAt.toISOString() }))}
+        />
+      </Section>
+
       <Section title="Disconnect" description="Removes the bot from this server.">
-        <DisconnectButton guildId={guild.id} guildName={guild.name} />
+        {isOwner ? (
+          <DisconnectButton guildId={guild.id} guildName={guild.name} />
+        ) : (
+          <p className="text-sm text-ink-2">Only the server's owner can disconnect it.</p>
+        )}
       </Section>
     </div>
   );

@@ -2,6 +2,7 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { env } from "../env";
 import { log } from "../log";
+import { recordHeartbeat } from "./heartbeat";
 import { clearExpiredTokens, drainJobs } from "./runner";
 
 function authorized(req: Request) {
@@ -18,6 +19,8 @@ export async function handleSweepRequest(req: Request, budgetMs = 45_000) {
   const started = Date.now();
   const summary = await drainJobs({ budgetMs, batch: 10 });
   await clearExpiredTokens();
-  log.info("sweep.done", { ...summary, durationMs: Date.now() - started });
+  const durationMs = Date.now() - started;
+  await recordHeartbeat("sweep", { ...summary, durationMs });
+  log.info("sweep.done", { ...summary, durationMs });
   return Response.json(summary);
 }

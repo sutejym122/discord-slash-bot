@@ -1,5 +1,6 @@
 import { asc, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GET as healthRoute } from "@/app/api/health/route";
 import { encrypt } from "@/server/crypto";
 import { closeDb, db } from "@/server/db/client";
 import { interactions, jobAttempts, jobs, reports } from "@/server/db/schema";
@@ -403,6 +404,22 @@ describe("sweep endpoint", () => {
       5_000,
     );
     expect(await res.json()).toEqual({ succeeded: 3, retrying: 0, failed: 0 });
+  });
+
+  it("records a heartbeat so a broken scheduler shows up in /api/health", async () => {
+    const before = await (await healthRoute()).json();
+    expect(before).toMatchObject({ status: "degraded", sweep: { lastRunAt: null, stale: true } });
+
+    await handleSweepRequest(
+      new Request("http://x/api/jobs/sweep", {
+        method: "POST",
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      }),
+      1_000,
+    );
+    const after = await (await healthRoute()).json();
+    expect(after).toMatchObject({ status: "ok", database: "ok", sweep: { stale: false } });
+    expect(JSON.stringify(after)).not.toMatch(/secret|token|hooks/i);
   });
 });
 

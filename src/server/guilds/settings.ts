@@ -1,9 +1,9 @@
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { decrypt, encrypt } from "../crypto";
 import { db } from "../db/client";
-import { commandRules, type Guild, guilds, jobs } from "../db/schema";
+import { commandRules, type Guild, guildAdmins, guilds, jobs, users } from "../db/schema";
 import type { CommandName } from "../discord/commands";
 import { listGuildChannels } from "../discord/rest";
 import { JobError } from "../jobs/errors";
@@ -168,4 +168,50 @@ export async function retryJob(guildId: string, jobId: string): Promise<ActionRe
 export async function disconnectGuild(guildId: string): Promise<ActionResult> {
   await db().update(guilds).set({ disconnectedAt: new Date() }).where(eq(guilds.id, guildId));
   return { ok: true, message: "Server disconnected" };
+}
+
+export async function listGuildAdmins(guildId: string) {
+  return db()
+    .select({
+      userId: users.id,
+      email: users.email,
+      name: users.name,
+      role: guildAdmins.role,
+      addedAt: guildAdmins.createdAt,
+    })
+    .from(guildAdmins)
+    .innerJoin(users, eq(users.id, guildAdmins.userId))
+    .where(eq(guildAdmins.guildId, guildId))
+    .orderBy(asc(guildAdmins.createdAt));
+}
+
+// Shares a server's dashboard with an existing account. Accounts are only created by the
+// operator (there's no sign-up), so an unknown email is an error rather than an invite.
+export async function shareAccess(guildId: string, email: string): Promise<ActionResult> {
+  const parsed = z.email().safeParse(email.trim().toLowerCase());
+  if (!parsed.success) return { ok: false, error: "Enter an email address." };
+  const user = await db().query.users.findFirst({ where: eq(users.email, parsed.data) });
+  if (!user) return { ok: false, error: "There's no account with that email." };
+  const added = await db()
+    .insert(guildAdmins)
+    .values({ guildId, userId: user.id, role: "admin" })
+    .onConflictDoNothing()
+    .returning({ userId: guildAdmins.userId });
+  if (added.length === 0) return { ok: false, error: `${parsed.data} already has access.` };
+  return { ok: true, message: `${parsed.data} can now manage this server` };
+}
+
+export async function revokeAccess(guildId: string, userId: string): Promise<ActionResult> {
+  const removed = await db()
+    .delete(guildAdmins)
+    .where(
+      and(
+        eq(guildAdmins.guildId, guildId),
+        eq(guildAdmins.userId, userId),
+        eq(guildAdmins.role, "admin"),
+      ),
+    )
+    .returning({ userId: guildAdmins.userId });
+  if (removed.length === 0) return { ok: false, error: "That person can't be removed." };
+  return { ok: true, message: "Access removed" };
 }

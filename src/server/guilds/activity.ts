@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { interactions, jobAttempts, jobs, reports } from "../db/schema";
+import { sweepStatus } from "../jobs/heartbeat";
 
 export type ActivityFilter = "all" | "reports" | "attention";
 
@@ -137,5 +138,5 @@ export async function deliveryHealth(guildId: string) {
     })
     .from(jobs)
     .where(and(eq(jobs.guildId, guildId), gte(jobs.updatedAt, since)));
-  return row;
+  return { ...row, sweep: await sweepStatus() };
 }

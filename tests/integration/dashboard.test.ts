@@ -6,8 +6,22 @@ import { auth } from "@/server/auth";
 import { encrypt } from "@/server/crypto";
 import { closeDb, db } from "@/server/db/client";
 import { guilds, jobs } from "@/server/db/schema";
-import { GuildAccessError, listGuildsFor, requireGuildAdmin } from "@/server/guilds/access";
-import { retryJob, saveRule, setAlertChannel, setMirror } from "@/server/guilds/settings";
+import {
+  GuildAccessError,
+  listGuildsFor,
+  OwnerRequiredError,
+  requireGuildAdmin,
+  requireGuildOwner,
+} from "@/server/guilds/access";
+import {
+  listGuildAdmins,
+  retryJob,
+  revokeAccess,
+  saveRule,
+  setAlertChannel,
+  setMirror,
+  shareAccess,
+} from "@/server/guilds/settings";
 import { handleInteractionRequest } from "@/server/interactions/endpoint";
 import { drainJobs } from "@/server/jobs/runner";
 import { createGuild, makeAdmin, resetDb } from "../support/db";
@@ -135,6 +149,39 @@ describe("guild isolation", () => {
 
     expect(await retryJob(a.id, job.id)).toMatchObject({ ok: false });
     expect(await retryJob(b.id, job.id)).toMatchObject({ ok: true });
+  });
+});
+
+describe("sharing access", () => {
+  it("lets the owner add an existing account, who then sees only that server", async () => {
+    const guild = await createGuild();
+    const other = await createGuild();
+    await makeAdmin(guild.id, alice.id, "owner");
+    await makeAdmin(other.id, alice.id, "owner");
+
+    expect(await shareAccess(guild.id, "nobody@example.com")).toMatchObject({ ok: false });
+    expect(await shareAccess(guild.id, "not an email")).toMatchObject({ ok: false });
+    expect(await shareAccess(guild.id, " BOB@example.com ")).toMatchObject({ ok: true });
+    expect(await shareAccess(guild.id, "bob@example.com")).toMatchObject({ ok: false });
+
+    expect((await listGuildsFor(bob.id)).map((g) => g.id)).toEqual([guild.id]);
+    const cookie = await signIn("bob@example.com");
+    expect((await getActivity(guild.id, cookie)).status).toBe(200);
+    expect((await getActivity(other.id, cookie)).status).toBe(404);
+  });
+
+  it("keeps owner-only actions away from added admins, and never removes the owner", async () => {
+    const guild = await createGuild();
+    await makeAdmin(guild.id, alice.id, "owner");
+    await makeAdmin(guild.id, bob.id, "admin");
+
+    await expect(requireGuildOwner(bob.id, guild.id)).rejects.toBeInstanceOf(OwnerRequiredError);
+    await expect(requireGuildOwner(alice.id, guild.id)).resolves.toMatchObject({ id: guild.id });
+
+    expect(await revokeAccess(guild.id, alice.id)).toMatchObject({ ok: false });
+    expect(await revokeAccess(guild.id, bob.id)).toMatchObject({ ok: true });
+    expect((await listGuildAdmins(guild.id)).map((a) => a.email)).toEqual(["alice@example.com"]);
+    await expect(requireGuildAdmin(bob.id, guild.id)).rejects.toBeInstanceOf(GuildAccessError);
   });
 });
 
