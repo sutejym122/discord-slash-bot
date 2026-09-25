@@ -2,68 +2,60 @@
 
 ## Tools and how the work was split
 
-I built this with Claude (Anthropic, used through Claude's Cowork mode) as the main pair.
-`CLAUDE.md` in the repo is the context file it worked from. I didn't use any other rules
-files.
+I built this with Claude (model `claude-opus-5-5`, in Claude's Cowork mode) as my main pair.
+The context files are in the repo exactly as used: `CLAUDE.md`, which I kept up to date as the
+project grew, and `AGENTS.md`, which Next.js generates and `CLAUDE.md` pulls in.
 
-- **What I did.** I wrote the brief: the quality bar, what counted as done, and what I
-  wouldn't accept, such as in-memory dedupe, fire-and-forget side effects, or secrets in the
-  browser. I made the calls on architecture and trade-offs, did every account and secret setup
-  step myself, and ran the live end-to-end checks against Discord.
-- **What Claude did.** Most of the code and tests, the first drafts of the docs, and the
-  research into free-tier limits.
-- **How I worked with it.** I stated constraints up front instead of reviewing whatever came
-  back, and checked each claim against a test or a live run before counting it as done. The
-  final checks against real Discord, Supabase and Vercel were mine.
+- **Me:** the brief, the quality bar and the architecture calls. I also did every account,
+  secret and deployment step, and the live end-to-end checks against Discord, Supabase and
+  Vercel.
+- **Claude:** most of the code and tests, first drafts of the docs, and research into
+  current free-tier limits.
+- **How we worked:** I put the constraints in the brief instead of correcting output after
+  the fact. Nothing counted as done until a test or a live run showed it working.
 
 ## Decisions I made
 
-**1. Idempotency has to live in the database and survive concurrency.**
-Discord can deliver the same interaction more than once. I didn't want a check-then-insert
-that two simultaneous requests could both pass. The interaction id is the primary key of
-`interactions`, and it's the first insert of the transaction that also writes the report, the
-jobs and the exact response. A concurrent duplicate blocks on that key, then replays the
-stored response. I asked for concurrent duplicates to be tested, not just sequential ones. The
-test fires 8 identical deliveries at once and asserts one report, one set of jobs and identical
+**Idempotency lives in the database and survives concurrency.**
+The interaction id is the primary key of `interactions`. It's the first insert of the
+transaction that also writes the report, the jobs and the exact response sent to Discord. A
+concurrent duplicate blocks on that key, then replays the stored response and does nothing
+else. I asked for concurrent duplicates to be tested, not just sequential ones. The test fires
+8 identical deliveries at once and asserts one report, one set of jobs and identical
 responses.
 
-**2. A database outbox instead of "call Slack after responding".**
-The obvious version does the slow work in a background promise after replying to Discord. If
-that promise fails or the function is recycled, the notification silently disappears. Instead:
+**A database outbox instead of "call Slack after responding".**
+A background promise after the reply silently loses work if it fails or the function is
+recycled. So:
 
-- Every side effect is a `jobs` row written in the same transaction as the interaction.
-- Jobs are claimed with `SKIP LOCKED` and a lease, and every attempt is recorded.
-- Errors are split into retryable and permanent, so a deleted webhook fails once with a clear
+- Every side effect is a `jobs` row, written in the same transaction as the interaction.
+- Jobs are claimed with `SKIP LOCKED` plus a lease, and every attempt is recorded.
+- Errors are classed as retryable or permanent. A deleted webhook fails once with a clear
   reason instead of retrying for an hour.
 
-**3. Hosting that fits a 3-second deadline on free tiers.**
-I asked for this to be checked against current limits rather than assumed.
+**Hosting checked against current free-tier limits, not assumed.**
 
-- Cloudflare Workers looked ideal, but its free plan caps CPU at 10 ms, and password hashing
-  alone blows through that.
-- Render's free tier sleeps, and a cold start would miss Discord's window.
-- Vercel Hobby works, but only allows daily cron, and I needed retries every minute. The fix
-  was to let Postgres own the clock: Supabase `pg_cron` + `pg_net` call the sweep endpoint
-  every minute.
-- That same always-on sweep ruled out Neon, which would burn its free compute hours staying
-  awake.
+- Cloudflare Workers caps free CPU at 10 ms, and password hashing alone exceeds that.
+- Render's free tier sleeps, so a cold start would miss Discord's 3-second window.
+- Vercel Hobby only allows daily cron. Supabase `pg_cron` + `pg_net` call the sweep every
+  minute instead, so the database that holds the queue also runs its clock.
+- That always-on sweep is also why I picked Supabase over Neon: it would burn Neon's free
+  compute hours.
 
 ## The hardest bug the AI walked me into
 
-The integration suite had one flaky failure. The "Discord's 3-second window" test said a
-report's AI status was still `pending` after the worker finished, but it passed every time it
-ran on its own. That made it look like a race in the job runner, which would have been a real
-problem.
+One integration test kept failing ("Discord's 3-second window"): a report's AI status was
+still `pending` after the worker finished. It passed every time it ran alone, which made it
+look like a race in the job runner.
 
-- **The actual cause** was in the test Claude had written just before it, for HTTP timeouts.
-  That test used `vi.useFakeTimers()` to skip an 8-second timeout. But
-  `AbortSignal.timeout()` isn't driven by faked `setTimeout`, so nothing sped up and Vitest
-  abandoned the test at 15 seconds.
-- **Why it hit a different test.** The test's `drainJobs` loop had a longer budget and kept
-  running in the background. It then claimed the *next* test's triage job through the global
-  claim query, against a fetch stub that no longer existed.
-- **What gave it away.** The failure passed in isolation, and it had nothing to do with
-  timeouts.
+- **What was wrong.** The cause was the test Claude wrote just before it, for HTTP timeouts.
+  - That test used `vi.useFakeTimers()` to skip an 8-second timeout, but
+    `AbortSignal.timeout()` isn't driven by faked timers. Vitest abandoned the test at 15
+    seconds.
+  - Its `drainJobs` loop kept running in the background, claimed the *next* test's triage
+    job, and ran it against a fetch stub that no longer existed.
+- **How it showed.** The failure passed in isolation and had nothing to do with timeouts. That
+  pointed at the tests interfering with each other rather than at the runner.
 - **The fix.** The real timeout is now unit-tested against a small local HTTP server with a
   200 ms timeout. The job-level test has the fake `fetch` throw the same `TimeoutError` the
   platform would.
@@ -72,27 +64,30 @@ problem.
 
 ## What production caught
 
-The first `pg_cron` job pointed at the app's root URL instead of `/api/jobs/sweep`.
-Every call came back `200` with the landing page's HTML, so the scheduler looked healthy.
-Meanwhile retries only happened when something else triggered a drain. I found it during
-live verification by looking at the response bodies in `net._http_response`, then
-rescheduled the job at the right endpoint and watched a simulated mirror outage recover.
+The first `pg_cron` job pointed at the app's root URL instead of `/api/jobs/sweep`. Every call
+returned `200` with the landing page, so the scheduler looked healthy while retries weren't
+being swept. I found it during live verification, rescheduled the job at the right endpoint,
+and confirmed that a simulated mirror outage recovered.
 
-A status code wasn't enough to prove the sweep was running, so I made the app itself notice:
+A `200` clearly isn't proof the sweep runs, so I made the app notice for itself:
 
-- Every sweep now records a heartbeat.
-- `/api/health` reports `degraded` after three missed minutes, and the dashboard shows
-  "Retry sweep last ran ..." next to the delivery status.
-- `supabase/cron.sql` now takes the full sweep URL as a Vault secret, and it says what a
-  healthy response looks like.
+- Each sweep records a heartbeat.
+- `/api/health` reports `degraded` after three missed minutes, and the dashboard shows the
+  same warning.
+- `supabase/cron.sql` now takes the full sweep URL and describes what a healthy response
+  looks like.
+
+## From my brief
+
+> Deduplicate using the Discord interaction ID. This must be enforced at the
+> persistence/database level, not only by an in-memory check. Think about concurrent
+> duplicate deliveries. [...] Do not rely solely on fire-and-forget promises or an in-memory
+> queue.
 
 ## With more time
 
-- **Streamed activity updates.** The dashboard polls every 4 seconds. Server-sent events would
-  work, but serverless functions make them awkward.
-- **Email invites.** Owners can share a server with an existing account, but accounts are
-  still created by the operator. An invite link would remove that step.
-- **Better mirror dedupe.** Only an idempotency key on the Slack/Discord side would fully close
-  the at-least-once window for mirrors. Short of that, I'd record a per-job delivery marker in
-  the message text so a duplicate is at least recognisable.
-- **Retention.** A job that prunes old interactions and attempts.
+- **Streaming updates:** stream the activity log instead of polling every 4 seconds.
+- **Email invites:** today owners share with accounts the operator has already created.
+- **Mirror dedupe:** a delivery marker in mirror messages, so the rare at-least-once duplicate
+  is recognisable.
+- **Retention:** a job that prunes old interactions and attempts.

@@ -56,6 +56,16 @@ sequenceDiagram
    no Discord REST calls. Locally the handler takes 10 to 50 ms.
 5. Next's `after()` keeps the function alive to run that interaction's jobs.
 
+For `/report`, the immediate response is the acknowledgment: a private "Report #N received"
+receipt. The follow-up edits that same message through the interaction webhook
+(`PATCH /messages/@original`) once triage is done. That's the same shape as a deferred
+response, except the user sees something useful straight away.
+
+If the database write itself fails, the route returns `500` and nothing is half-recorded.
+Discord then shows the user that the interaction failed, instead of the app pretending it
+worked. Once the write has committed, a crash or redeploy can't lose the work: the jobs are
+already in Postgres, and the minute sweep picks them up.
+
 ### Jobs
 
 The work that happens after the response is stored as rows in `jobs`, a database-backed
